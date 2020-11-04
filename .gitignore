@@ -1,4 +1,7 @@
 data/
+weights/
+logs/
+__pycache__
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,vscode,jupyternotebooks,macos
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,vscode,jupyternotebooks,macos
