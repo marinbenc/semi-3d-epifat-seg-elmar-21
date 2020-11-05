@@ -76,16 +76,6 @@ def main(args):
                         validation_true.extend(
                             [y_true_np[s] for s in range(y_true_np.shape[0])]
                         )
-                        if (epoch % args.vis_freq == 0) or (epoch == args.epochs - 1):
-                            if i * args.batch_size < args.vis_images:
-                                tag = "image/{}".format(i)
-                                num_images = args.vis_images - i * args.batch_size
-                                # logger.image_list_summary(
-                                #     tag,
-                                #     log_images(x, y_true, y_pred)[:num_images],
-                                #     step,
-                                # )
-
                     if phase == "train":
                         loss_train.append(loss.item())
                         loss.backward()
@@ -142,14 +132,14 @@ def datasets(args):
     train = Dataset(
         inputs_dir=os.path.join(args.images, 'input'),
         labels_dir=os.path.join(args.images, 'label'),
-        subset="single",
+        subset="train",
         image_size=args.image_size,
         #transform=transforms(scale=args.aug_scale, angle=args.aug_angle, flip_prob=0.5),
     )
     valid = Dataset(
         inputs_dir=os.path.join(args.images, 'input'),
         labels_dir=os.path.join(args.images, 'label'),
-        subset="single",
+        subset="validation",
         image_size=args.image_size,
         random_sampling=False,
     )
@@ -203,7 +193,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--lr",
         type=float,
-        default=0.0001,
+        default=0.001,
         help="initial learning rate (default: 0.001)",
     )
     parser.add_argument(
