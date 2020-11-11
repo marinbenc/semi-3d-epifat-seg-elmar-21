@@ -7,7 +7,7 @@ import torch.nn as nn
 
 class UNet(nn.Module):
 
-    def __init__(self, in_channels=3, out_channels=1, init_features=32, device):
+    def __init__(self, device, in_channels=3, out_channels=1, init_features=32):
         super(UNet, self).__init__()
         self.device = device
         
