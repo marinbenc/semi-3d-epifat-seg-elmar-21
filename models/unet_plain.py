@@ -7,9 +7,10 @@ import torch.nn as nn
 
 class UNet(nn.Module):
 
-    def __init__(self, in_channels=3, out_channels=1, init_features=32):
+    def __init__(self, in_channels=3, out_channels=1, init_features=32, device):
         super(UNet, self).__init__()
-
+        self.device = device
+        
         features = init_features
         self.encoder1 = UNet._block(in_channels, features, name="enc1")
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -52,16 +53,20 @@ class UNet(nn.Module):
         bottleneck = self.bottleneck(self.pool4(enc4))
 
         dec4 = self.upconv4(bottleneck)
-        dec4 = torch.cat((dec4, enc4, torch.ones(1, 1, dec4.shape[-2], dec4.shape[-1]) * x[0, 1, 0, 0]), dim=1)
+        depth4 = (torch.ones(1, 1, dec4.shape[-2], dec4.shape[-1]) * x[0, 1, 0, 0]).to(device)
+        dec4 = torch.cat((dec4, enc4, depth4), dim=1)
         dec4 = self.decoder4(dec4)
         dec3 = self.upconv3(dec4)
-        dec3 = torch.cat((dec3, enc3, torch.ones(dec3.shape) * x[0, 1, 0, 0]), dim=1)
+        depth3 = (torch.ones(dec3.shape) * x[0, 1, 0, 0]).to(device)
+        dec3 = torch.cat((dec3, enc3, depth3), dim=1)
         dec3 = self.decoder3(dec3)
         dec2 = self.upconv2(dec3)
-        dec2 = torch.cat((dec2, enc2, torch.ones(dec2.shape) * x[0, 1, 0, 0]), dim=1)
+        depth2 = (torch.ones(dec2.shape) * x[0, 1, 0, 0]).to(device)
+        dec2 = torch.cat((dec2, enc2, depth2), dim=1)
         dec2 = self.decoder2(dec2)
         dec1 = self.upconv1(dec2)
-        dec1 = torch.cat((dec1, enc1, torch.ones(dec1.shape) * x[0, 1, 0, 0]), dim=1)
+        depth1 = torch.ones(dec1.shape) * x[0, 1, 0, 0]
+        dec1 = torch.cat((dec1, enc1, depth1), dim=1)
         dec1 = self.decoder1(dec1)
         return torch.sigmoid(self.conv(dec1))
 
