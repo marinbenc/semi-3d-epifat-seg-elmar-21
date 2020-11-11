@@ -47,7 +47,7 @@ class PericardiumDataset(Dataset):
 
           # add slice depth channel to input images
           images_count = len(input_images)
-          depth_channels = [np.ones((512, 512)) * (i / images_count) * 255 for i in range(images_count)]
+          depth_channels = [np.ones((512, 512)) * (i / images_count) - 0.5 for i in range(images_count)]
           input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
           input_images = [np.dstack((input_images[i], depth_channels[i])) for i in range(images_count)]
 

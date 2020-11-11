@@ -75,12 +75,16 @@ def resize_sample(x, size=256):
 
 
 def normalize_volume(volume):
+    unnormalized = volume[:, :, :, 1]
+    print("Before normalization", volume[:, 0, 0, 1])
     p10 = np.percentile(volume, 10)
     p99 = np.percentile(volume, 99)
     volume = rescale_intensity(volume, in_range=(p10, p99))
     m = np.mean(volume, axis=(0, 1, 2))
     s = np.std(volume, axis=(0, 1, 2))
     volume = (volume - m) / s
+    volume[:, :, :, 1] = unnormalized
+    print("After normalization", volume[:, 0, 0, 1])
     return volume
 
 
