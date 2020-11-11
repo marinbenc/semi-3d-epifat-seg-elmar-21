@@ -62,6 +62,7 @@ def main(args):
                 optimizer.zero_grad()
 
                 with torch.set_grad_enabled(phase == "train"):
+                    print(x[1])
                     y_pred = unet(x)
 
                     loss = dsc_loss(y_pred, y_true)
