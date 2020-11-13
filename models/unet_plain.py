@@ -30,15 +30,15 @@ class UNet(nn.Module):
         self.upconv3 = nn.ConvTranspose2d(
             features * 8, features * 4, kernel_size=2, stride=2
         )
-        self.decoder3 = UNet._block((features * 4) * 3, features * 4, name="dec3")
+        self.decoder3 = UNet._block((features * 4) * 2 + 1, features * 4, name="dec3")
         self.upconv2 = nn.ConvTranspose2d(
             features * 4, features * 2, kernel_size=2, stride=2
         )
-        self.decoder2 = UNet._block((features * 2) * 3, features * 2, name="dec2")
+        self.decoder2 = UNet._block((features * 2) * 2 + 1, features * 2, name="dec2")
         self.upconv1 = nn.ConvTranspose2d(
             features * 2, features, kernel_size=2, stride=2
         )
-        self.decoder1 = UNet._block(features * 3, features, name="dec1")
+        self.decoder1 = UNet._block(features * 2 + 1, features, name="dec1")
 
         self.conv = nn.Conv2d(
             in_channels=features, out_channels=out_channels, kernel_size=1
@@ -56,8 +56,6 @@ class UNet(nn.Module):
         dec4 = torch.cat((dec4, enc4, self.depth_feature(dec4, x)), dim=1)
         dec4 = self.decoder4(dec4)
         dec3 = self.upconv3(dec4)
-        print(dec3.shape)
-        print(self.depth_feature(dec3, x).shape)
         dec3 = torch.cat((dec3, enc3, self.depth_feature(dec3, x)), dim=1)
         dec3 = self.decoder3(dec3)
         dec2 = self.upconv2(dec3)
@@ -69,7 +67,7 @@ class UNet(nn.Module):
         return torch.sigmoid(self.conv(dec1))
 
     def depth_feature(self, dec, x):
-      return torch.ones((x.shape[0], 1, dec.shape[2], dec.shape[3]), device=self.device) * x[:, 1, 0, 0]
+      return torch.ones((x.shape[0], 1, dec.shape[2], dec.shape[3]), device=self.device) * x[:, 1:, :1, :1]
 
     @staticmethod
     def _block(in_channels, features, name):
