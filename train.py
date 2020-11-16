@@ -28,7 +28,7 @@ def main(args):
     loader_train, loader_valid = data_loaders(args)
     loaders = {"train": loader_train, "valid": loader_valid}
 
-    unet = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels, device=device)
+    unet = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels)
     unet.to(device)
 
     dsc_loss = DiceLoss()

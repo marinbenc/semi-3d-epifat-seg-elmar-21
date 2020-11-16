@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 from utils import crop_sample, pad_sample, resize_sample, normalize_volume
 
 class PericardiumDataset(Dataset):
-    in_channels = 1
+    in_channels = 2
     out_channels = 1
 
     def __init__(
