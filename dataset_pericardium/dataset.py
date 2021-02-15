@@ -46,10 +46,10 @@ class PericardiumDataset(Dataset):
           input_images = [imread(os.path.join(input_folder, filepath), as_gray=True) for filepath in input_files]
 
           # add slice depth channel to input images
-          images_count = len(input_images)
-          depth_channels = [np.ones((512, 512)) * (i / images_count) - 0.5 for i in range(images_count)]
-          input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
-          input_images = [np.dstack((input_images[i], depth_channels[i])) for i in range(images_count)]
+        #   images_count = len(input_images)
+        #   depth_channels = [np.ones((512, 512)) * (i / images_count) - 0.5 for i in range(images_count)]
+        #   input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
+        #   input_images = [np.dstack((input_images[i], depth_channels[i])) for i in range(images_count)]
 
           label_images = [imread(os.path.join(label_folder, filepath), as_gray=True) for filepath in label_files]
 
@@ -91,7 +91,7 @@ class PericardiumDataset(Dataset):
         ]
 
         # add channel dimension
-        self.volumes = [(v, m[..., np.newaxis]) for (v, m) in self.volumes]
+        self.volumes = [(v[..., np.newaxis], m[..., np.newaxis]) for (v, m) in self.volumes]
 
         print("done creating {} dataset".format(subset))
 
