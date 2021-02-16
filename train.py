@@ -1,12 +1,12 @@
 import argparse
 import json
 import os
-
 import numpy as np
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import datetime
 
 import sys
 sys.path.append('dataset_pericardium')
@@ -14,11 +14,24 @@ sys.path.append('dataset_pericardium')
 from dataset import PericardiumDataset as Dataset
 from logger import Logger
 from loss import DiceLoss
-#from transform import transforms
 sys.path.append('models')
 from unet_plain import UNet
 from utils import log_images, dsc
+from dice_metric import DiceMetric
+from ignite.utils import setup_logger
+from ignite.handlers import ModelCheckpoint
 
+from ignite.contrib.handlers.tensorboard_logger import (
+    GradsHistHandler,
+    GradsScalarHandler,
+    TensorboardLogger,
+    WeightsHistHandler,
+    WeightsScalarHandler,
+    global_step_from_engine,
+)
+
+from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
+from ignite.metrics import Accuracy, Loss, ConfusionMatrix, DiceCoefficient
 
 def main(args):
     makedirs(args)
@@ -26,82 +39,76 @@ def main(args):
     device = torch.device("cpu" if not torch.cuda.is_available() else args.device)
 
     loader_train, loader_valid = data_loaders(args)
-    loaders = {"train": loader_train, "valid": loader_valid}
 
-    unet = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels, device=device)
-    unet.to(device)
+    model = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels, device=device)
+    model.to(device)
 
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
     dsc_loss = DiceLoss()
-    best_validation_dsc = 0.0
 
-    optimizer = optim.Adam(unet.parameters(), lr=args.lr)
+    train_metrics = {
+        "loss": Loss(dsc_loss),
+        "dsc": DiceMetric(loader_train, device=device)
+    }
+    
+    val_metrics = {
+        "loss": Loss(dsc_loss),
+        "dsc": DiceMetric(loader_valid, device=device)
+    }
 
-    logger = Logger(args.logs)
-    loss_train = []
-    loss_valid = []
+    trainer = create_supervised_trainer(model, optimizer, dsc_loss, device=device)
+    trainer.logger = setup_logger("Trainer")
 
-    step = 0
+    train_evaluator = create_supervised_evaluator(model, metrics=train_metrics, device=device)
+    train_evaluator.logger = setup_logger("Train Evaluator")
+    validation_evaluator = create_supervised_evaluator(model, metrics=val_metrics, device=device)
+    validation_evaluator.logger = setup_logger("Val Evaluator")
 
-    for epoch in tqdm(range(args.epochs), total=args.epochs):
-        for phase in ["train", "valid"]:
-            if phase == "train":
-                unet.train()
-            else:
-                unet.eval()
+    @trainer.on(Events.EPOCH_COMPLETED)
+    def compute_metrics(engine):
+        train_evaluator.run(loader_train)
+        validation_evaluator.run(loader_valid)
+    
+    log_dir = 'logs/' + datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
+    tb_logger = TensorboardLogger(log_dir=log_dir)
 
-            validation_pred = []
-            validation_true = []
+    tb_logger.attach_output_handler(
+        trainer,
+        event_name=Events.ITERATION_COMPLETED(every=100),
+        tag="training",
+        output_transform=lambda loss: {"batchloss": loss},
+        metric_names="all",
+    )
 
-            for i, data in enumerate(loaders[phase]):
-                if phase == "train":
-                    step += 1
+    for tag, evaluator in [("training", train_evaluator), ("validation", validation_evaluator)]:
+        tb_logger.attach_output_handler(
+            evaluator,
+            event_name=Events.EPOCH_COMPLETED,
+            tag=tag,
+            metric_names=["loss", "dsc"],
+            global_step_transform=global_step_from_engine(trainer),
+        )
 
-                x, y_true = data
-                x, y_true = x.to(device), y_true.to(device)
+    def score_function(engine):
+        return engine.state.metrics["dsc"]
 
-                optimizer.zero_grad()
+    model_checkpoint = ModelCheckpoint(
+        log_dir,
+        n_saved=2,
+        filename_prefix="best",
+        score_function=score_function,
+        score_name="dsc",
+        global_step_transform=global_step_from_engine(trainer),
+        require_empty=False
+    )
+    validation_evaluator.add_event_handler(Events.COMPLETED, model_checkpoint, {"model": model})
+    
+    try:
+        trainer.run(loader_train, max_epochs=120)
+    except KeyboardInterrupt:
+        tb_logger.close()
 
-                with torch.set_grad_enabled(phase == "train"):
-                    y_pred = unet(x)
-
-                    loss = dsc_loss(y_pred, y_true)
-
-                    if phase == "valid":
-                        loss_valid.append(loss.item())
-                        y_pred_np = y_pred.detach().cpu().numpy()
-                        validation_pred.extend(
-                            [y_pred_np[s] for s in range(y_pred_np.shape[0])]
-                        )
-                        y_true_np = y_true.detach().cpu().numpy()
-                        validation_true.extend(
-                            [y_true_np[s] for s in range(y_true_np.shape[0])]
-                        )
-                    if phase == "train":
-                        loss_train.append(loss.item())
-                        loss.backward()
-                        optimizer.step()
-
-                if phase == "train" and (step + 1) % 10 == 0:
-                    log_loss_summary(logger, loss_train, step)
-                    loss_train = []
-
-            if phase == "valid":
-                log_loss_summary(logger, loss_valid, step, prefix="val_")
-                mean_dsc = np.mean(
-                    dsc_per_volume(
-                        validation_pred,
-                        validation_true,
-                        loader_valid.dataset.patient_slice_index,
-                    )
-                )
-                logger.scalar_summary("val_dsc", mean_dsc, step)
-                if mean_dsc > best_validation_dsc:
-                    best_validation_dsc = mean_dsc
-                    torch.save(unet.state_dict(), os.path.join(args.weights, "unet.pt"))
-                loss_valid = []
-
-    print("Best validation mean DSC: {:4f}".format(best_validation_dsc))
-
+    tb_logger.close()
 
 def data_loaders(args):
     dataset_train, dataset_valid = datasets(args)
@@ -144,24 +151,6 @@ def datasets(args):
         random_sampling=False,
     )
     return train, valid
-
-
-def dsc_per_volume(validation_pred, validation_true, patient_slice_index):
-    dsc_list = []
-    num_slices = np.bincount([p[0] for p in patient_slice_index])
-    index = 0
-    for p in range(len(num_slices)):
-        y_pred = np.array(validation_pred[index : index + num_slices[p]])
-        y_true = np.array(validation_true[index : index + num_slices[p]])
-        dsc_list.append(dsc(y_pred, y_true))
-        index += num_slices[p]
-    return dsc_list
-
-
-def log_loss_summary(logger, loss, step, prefix=""):
-    print(f'{prefix}loss', np.mean(loss))
-    logger.scalar_summary(prefix + "loss", np.mean(loss), step)
-
 
 def makedirs(args):
     os.makedirs(args.weights, exist_ok=True)
