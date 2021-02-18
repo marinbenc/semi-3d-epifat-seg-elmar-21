@@ -7,11 +7,13 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import datetime
+from sklearn.model_selection import KFold
+import helpers as h
 
 import sys
 sys.path.append('dataset_pericardium')
 
-from dataset import PericardiumDataset as Dataset
+from patients_dataset import PatientsDataset as Dataset
 from logger import Logger
 from loss import DiceLoss
 sys.path.append('models')
@@ -36,9 +38,35 @@ from ignite.metrics import Accuracy, Loss, ConfusionMatrix, DiceCoefficient
 def main(args):
     makedirs(args)
     snapshotargs(args)
-    device = torch.device("cpu" if not torch.cuda.is_available() else args.device)
+    device = torch.device("cpu" if not torch.cuda.is_available() else "cuda")
 
-    loader_train, loader_valid = data_loaders(args)
+    all_patients = h.listdir(os.path.join(args.images, 'input'))
+    all_patients.sort()
+
+    kfold = KFold(n_splits=args.folds)
+    folds = kfold.split(all_patients)
+
+    fold_dscs = []
+
+    for fold, (train_idxs, valid_idxs) in enumerate(folds):
+        train_patients = list(np.array(all_patients)[train_idxs])
+        valid_patients = list(np.array(all_patients)[valid_idxs])
+        print(valid_patients, train_patients)
+
+        best_dsc = train_fold(args, fold, device, train_patients, valid_patients)
+        fold_dscs.append(best_dsc)
+    
+    mean_dsc = np.mean(fold_dscs)
+    print(f'Mean CV DSC: {mean_dsc:.4f}')
+
+def train_fold(args, fold, device, train_patients, valid_patients):
+    '''
+    Trains a single fold and returns the best DSC score.
+    '''
+
+    print(f'\n\n --- Fold {str(fold)} --- \n\n')
+
+    loader_train, loader_valid = data_loaders(args, train_patients, valid_patients)
 
     model = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels, device=device)
     model.to(device)
@@ -50,7 +78,7 @@ def main(args):
         "loss": Loss(dsc_loss),
         "dsc": DiceMetric(loader_train, device=device)
     }
-    
+
     val_metrics = {
         "loss": Loss(dsc_loss),
         "dsc": DiceMetric(loader_valid, device=device)
@@ -64,12 +92,19 @@ def main(args):
     validation_evaluator = create_supervised_evaluator(model, metrics=val_metrics, device=device)
     validation_evaluator.logger = setup_logger("Val Evaluator")
 
+    best_dsc = 0
+
     @trainer.on(Events.EPOCH_COMPLETED)
     def compute_metrics(engine):
+        nonlocal best_dsc
         train_evaluator.run(loader_train)
         validation_evaluator.run(loader_valid)
-    
-    log_dir = 'logs/' + datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
+        curr_dsc = validation_evaluator.state.metrics['dsc']
+        if curr_dsc > best_dsc:
+            best_dsc = curr_dsc
+
+
+    log_dir = f'logs/{datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")}_fold{fold}'
     tb_logger = TensorboardLogger(log_dir=log_dir)
 
     tb_logger.attach_output_handler(
@@ -101,17 +136,16 @@ def main(args):
         global_step_transform=global_step_from_engine(trainer),
         require_empty=False
     )
-    validation_evaluator.add_event_handler(Events.COMPLETED, model_checkpoint, {"model": model})
-    
-    try:
-        trainer.run(loader_train, max_epochs=120)
-    except KeyboardInterrupt:
-        tb_logger.close()
 
+    validation_evaluator.add_event_handler(Events.COMPLETED, model_checkpoint, {"model": model})
+
+    trainer.run(loader_train, max_epochs=args.epochs)
     tb_logger.close()
 
-def data_loaders(args):
-    dataset_train, dataset_valid = datasets(args)
+    return best_dsc
+
+def data_loaders(args, patients_train, patients_valid):
+    dataset_train, dataset_valid = datasets(args, patients_train, patients_valid)
 
     def worker_init(worker_id):
         np.random.seed(42 + worker_id)
@@ -135,18 +169,18 @@ def data_loaders(args):
     return loader_train, loader_valid
 
 
-def datasets(args):
+def datasets(args, patients_train, patients_valid):
     train = Dataset(
+        patient_names=patients_train,
         inputs_dir=os.path.join(args.images, 'input'),
         labels_dir=os.path.join(args.images, 'label'),
-        subset="train",
         image_size=args.image_size,
         #transform=transforms(scale=args.aug_scale, angle=args.aug_angle, flip_prob=0.5),
     )
     valid = Dataset(
+        patient_names=patients_valid,
         inputs_dir=os.path.join(args.images, 'input'),
         labels_dir=os.path.join(args.images, 'label'),
-        subset="validation",
         image_size=args.image_size,
         random_sampling=False,
     )
@@ -186,28 +220,10 @@ if __name__ == "__main__":
         help="initial learning rate (default: 0.001)",
     )
     parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda:0",
-        help="device for training (default: cuda:0)",
-    )
-    parser.add_argument(
-        "--workers",
+        "--folds",
         type=int,
-        default=4,
-        help="number of workers for data loading (default: 4)",
-    )
-    parser.add_argument(
-        "--vis-images",
-        type=int,
-        default=200,
-        help="number of visualization images to save in log file (default: 200)",
-    )
-    parser.add_argument(
-        "--vis-freq",
-        type=int,
-        default=10,
-        help="frequency of saving images to log file (default: 10)",
+        default=5,
+        help="number of folds (default: 5)",
     )
     parser.add_argument(
         "--weights", type=str, default="./weights", help="folder to save weights"
@@ -225,16 +241,10 @@ if __name__ == "__main__":
         help="target input image size (default: 128)",
     )
     parser.add_argument(
-        "--aug-scale",
+        "--workers",
         type=int,
-        default=0.05,
-        help="scale factor range for augmentation (default: 0.05)",
-    )
-    parser.add_argument(
-        "--aug-angle",
-        type=int,
-        default=15,
-        help="rotation angle range in degrees for augmentation (default: 15)",
+        default=4,
+        help="number of workers for data loading (default: 4)",
     )
     args = parser.parse_args()
     main(args)
