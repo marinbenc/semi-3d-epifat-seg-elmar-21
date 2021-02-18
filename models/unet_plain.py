@@ -12,7 +12,7 @@ class UNet(nn.Module):
         self.device = device
         
         features = init_features
-        self.encoder1 = UNet._block(1, features, name="enc1")
+        self.encoder1 = UNet._block(in_channels, features, name="enc1")
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.encoder2 = UNet._block(features, features * 2, name="enc2")
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)

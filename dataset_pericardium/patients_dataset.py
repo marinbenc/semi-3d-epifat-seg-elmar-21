@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 from utils import crop_sample, pad_sample, resize_sample, normalize_volume
 
 class PatientsDataset(Dataset):
-    in_channels = 1
+    in_channels = 2
     out_channels = 1
 
     def __init__(
@@ -43,10 +43,10 @@ class PatientsDataset(Dataset):
           input_images = [imread(os.path.join(input_folder, filepath), as_gray=True) for filepath in input_files]
 
           # add slice depth channel to input images
-        #   images_count = len(input_images)
-        #   depth_channels = [np.ones((512, 512)) * (i / images_count) - 0.5 for i in range(images_count)]
-        #   input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
-        #   input_images = [np.dstack((input_images[i], depth_channels[i])) for i in range(images_count)]
+          images_count = len(input_images)
+          depth_channels = [np.ones((512, 512)) * (i / images_count) - 0.5 for i in range(images_count)]
+          input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
+          input_images = [np.dstack((input_images[i], depth_channels[i])) for i in range(images_count)]
 
           label_images = [imread(os.path.join(label_folder, filepath), as_gray=True) for filepath in label_files]
 
@@ -112,7 +112,8 @@ class PatientsDataset(Dataset):
             image, mask = self.transform((image, mask))
 
         # fix dimensions (C, H, W)
-        image = image.transpose(2, 0, 1)
+        image = image.transpose(3, 2, 0, 1)
+        image = image.squeeze(0)
         mask = mask.transpose(2, 0, 1)
 
         image_tensor = torch.from_numpy(image.astype(np.float32))
