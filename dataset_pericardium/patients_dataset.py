@@ -108,12 +108,13 @@ class PatientsDataset(Dataset):
         image = v[slice_n]
         mask = m[slice_n]
 
+        image = image.squeeze(-1)
+
         if self.transform is not None:
             image, mask = self.transform((image, mask))
 
         # fix dimensions (C, H, W)
-        image = image.transpose(3, 2, 0, 1)
-        image = image.squeeze(0)
+        image = image.transpose(2, 0, 1)
         mask = mask.transpose(2, 0, 1)
 
         image_tensor = torch.from_numpy(image.astype(np.float32))

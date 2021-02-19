@@ -22,6 +22,7 @@ from utils import log_images, dsc
 from dice_metric import DiceMetric
 from ignite.utils import setup_logger
 from ignite.handlers import ModelCheckpoint
+from transform import transforms
 
 from ignite.contrib.handlers.tensorboard_logger import (
     GradsHistHandler,
@@ -175,7 +176,7 @@ def datasets(args, patients_train, patients_valid):
         inputs_dir=os.path.join(args.images, 'input'),
         labels_dir=os.path.join(args.images, 'label'),
         image_size=args.image_size,
-        #transform=transforms(scale=args.aug_scale, angle=args.aug_angle, flip_prob=0.5),
+        transform=transforms(scale=args.aug_scale, angle=args.aug_angle),
     )
     valid = Dataset(
         patient_names=patients_valid,
@@ -245,6 +246,18 @@ if __name__ == "__main__":
         type=int,
         default=4,
         help="number of workers for data loading (default: 4)",
+    )
+    parser.add_argument(
+        "--aug-scale",
+        type=int,
+        default=0.05,
+        help="scale factor range for augmentation (default: 0.05)",
+    )
+    parser.add_argument(
+        "--aug-angle",
+        type=int,
+        default=15,
+        help="rotation angle range in degrees for augmentation (default: 15)",
     )
     args = parser.parse_args()
     main(args)
