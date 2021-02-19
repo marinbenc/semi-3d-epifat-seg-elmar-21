@@ -1,3 +1,12 @@
+'''
+Taken from:
+Mateusz Buda, Ashirbani Saha, Maciej A. Mazurowski,
+Association of genomic subtypes of lower-grade gliomas with shape features automatically extracted by a deep learning algorithm,
+Computers in Biology and Medicine, Volume 109, 2019, Pages 218-225, ISSN 0010-4825,
+https://doi.org/10.1016/j.compbiomed.2019.05.002.
+https://github.com/mateuszbuda/brain-segmentation-pytorch
+'''
+
 import numpy as np
 from skimage.transform import rescale, rotate
 from torchvision.transforms import Compose
