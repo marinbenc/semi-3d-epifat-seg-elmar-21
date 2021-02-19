@@ -50,8 +50,8 @@ class PatientsDataset(Dataset):
 
           label_images = [imread(os.path.join(label_folder, filepath), as_gray=True) for filepath in label_files]
 
-          volumes[name] = np.array(input_images[1:-1])
-          masks[name] = np.array(label_images[1:-1])
+          volumes[name] = np.array(input_images)
+          masks[name] = np.array(label_images)
 
         self.patients = sorted(volumes)
 
