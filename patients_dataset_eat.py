@@ -13,6 +13,7 @@ import random
 import numpy as np
 import torch
 
+import matplotlib.pyplot as plt
 from skimage.io import imread
 from skimage.transform import resize
 from torch.utils.data import Dataset
@@ -66,10 +67,13 @@ class PatientsDataset(Dataset):
           depth_channels = [np.ones((512, 512)) * (i / images_count) - 0.5 for i in range(images_count)]
 
           # add pericardium segmentation channel to input images
-          peri_channels = [imread(os.path.join(input_folder, filepath), as_gray=True) for filepath in peri_files]
+          peri_folder = os.path.join(peri_dir, name)
+          peri_channels = [imread(os.path.join(peri_folder, filepath), as_gray=True) for filepath in peri_files]
           peri_channels = [resize(img, output_shape=(512, 512), order=0, mode="constant", cval=0, anti_aliasing=False) for img in peri_channels]
-
+          
           # add depth and pericardium channels
+          #input_images = [input_images[i] * peri_channels[i] for i in range(images_count)]
+          
           input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
           input_images = [np.dstack((input_images[i], peri_channels[i], depth_channels[i])) for i in range(images_count)]
 

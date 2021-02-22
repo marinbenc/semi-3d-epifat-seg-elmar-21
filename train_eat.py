@@ -10,14 +10,16 @@ https://github.com/mateuszbuda/brain-segmentation-pytorch
 import argparse
 import json
 import os
+import sys
+import datetime
+from pprint import pprint
+
 import numpy as np
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import datetime
 from sklearn.model_selection import KFold
-import helpers as h
-import sys
+import matplotlib.pyplot as plt
 from ignite.utils import setup_logger
 from ignite.handlers import ModelCheckpoint
 from ignite.contrib.handlers.tensorboard_logger import (
@@ -27,6 +29,7 @@ from ignite.contrib.handlers.tensorboard_logger import (
 from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
 from ignite.metrics import Accuracy, Loss, ConfusionMatrix, DiceCoefficient
 
+import helpers as h
 from loss import DiceLoss
 sys.path.append('models')
 from unet_plain import UNet
@@ -93,6 +96,14 @@ def train_fold(args, fold, device, train_patients, valid_patients):
     validation_evaluator.logger = setup_logger("Val Evaluator")
 
     best_dsc = 0
+
+    @trainer.on(Events.GET_BATCH_COMPLETED(once=1))
+    def plot_batch(engine):
+        x, y = engine.state.batch
+        plt.imshow(x[0].squeeze(0)[0], cmap="gray")
+        plt.show(block=True)
+        plt.imshow(y[0].squeeze(0), cmap="gray")
+        plt.show(block=True)
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def compute_metrics(engine):

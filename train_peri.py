@@ -10,14 +10,15 @@ https://github.com/mateuszbuda/brain-segmentation-pytorch
 import argparse
 import json
 import os
+import datetime
+import sys
+
 import numpy as np
+import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import datetime
 from sklearn.model_selection import KFold
-import helpers as h
-import sys
 from ignite.utils import setup_logger
 from ignite.handlers import ModelCheckpoint
 from ignite.contrib.handlers.tensorboard_logger import (
@@ -34,6 +35,7 @@ from patients_dataset import PatientsDataset as Dataset
 from utils import dsc
 from dice_metric import DiceMetric
 from transform import transforms
+import helpers as h
 
 def main(args):
     makedirs(args)
