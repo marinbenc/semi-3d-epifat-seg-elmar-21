@@ -5,6 +5,7 @@ predicted pericardium masks in a folder to be used by the EAT segmentation model
 
 import sys
 import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch

@@ -97,13 +97,13 @@ def train_fold(args, fold, device, train_patients, valid_patients):
 
     best_dsc = 0
 
-    @trainer.on(Events.GET_BATCH_COMPLETED(once=1))
-    def plot_batch(engine):
-        x, y = engine.state.batch
-        plt.imshow(x[0].squeeze(0)[0], cmap="gray")
-        plt.show(block=True)
-        plt.imshow(y[0].squeeze(0), cmap="gray")
-        plt.show(block=True)
+    # @trainer.on(Events.GET_BATCH_COMPLETED(once=1))
+    # def plot_batch(engine):
+    #     x, y = engine.state.batch
+    #     plt.imshow(x[0].squeeze(0)[0], cmap="gray")
+    #     plt.show(block=True)
+    #     plt.imshow(y[0].squeeze(0), cmap="gray")
+    #     plt.show(block=True)
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def compute_metrics(engine):
