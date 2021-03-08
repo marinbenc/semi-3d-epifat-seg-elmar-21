@@ -23,8 +23,8 @@ import helpers as h
 from utils import crop_sample, pad_sample, resize_sample, normalize_volume
 
 class PatientsDataset(Dataset):
-    in_channels = 3
-    out_channels = 1
+    in_channels = 2
+    out_channels = 2
 
     def __init__(
         self,
@@ -46,12 +46,9 @@ class PatientsDataset(Dataset):
         masks = {}
 
         if verbose:
-            print("reading images...")
-
-        self.in_channels = 3 if peri_as_input else 2
+          print("reading images...")
 
         patient_names.sort()
-
 
         def patient_files_in_folder(folder, patient):
             files = h.listdir(os.path.join(folder, patient))
@@ -71,27 +68,25 @@ class PatientsDataset(Dataset):
 
           # create depth channel
           images_count = len(input_images)
-          depth_channels = [np.ones((512, 512)) * (i / images_count) - 0.5 for i in range(images_count)]
+          depth_channels = [np.ones((512, 512), dtype=np.double) * (i / float(images_count)) - 0.5 for i in range(images_count)]
 
-          # add pericardium segmentation channel to input images
+          
+          # add depth
+          input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
+          input_images = [np.dstack((input_images[i], depth_channels[i])) for i in range(images_count)]
+
           peri_folder = os.path.join(peri_dir, name)
           peri_channels = [imread(os.path.join(peri_folder, filepath), as_gray=True) for filepath in peri_files]
           if peri_transform is not None:
             peri_channels = [peri_transform(img) for img in peri_channels]
           peri_channels = [resize(img, output_shape=(512, 512), order=0, mode="constant", cval=0, anti_aliasing=False) for img in peri_channels]
-          
-          # add depth and pericardium channels
 
-          if peri_as_input:
-            input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
-            input_images = [np.dstack((input_images[i], peri_channels[i], depth_channels[i])) for i in range(images_count)]
-          else:
-            input_images = [input_images[i] * peri_channels[i] for i in range(images_count)]
-            input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
-            input_images = [np.dstack((input_images[i], depth_channels[i])) for i in range(images_count)]
           
           label_folder = os.path.join(labels_dir, name)
           label_images = [imread(os.path.join(label_folder, filepath), as_gray=True) for filepath in label_files]
+          
+          # add peri
+          label_images = [np.dstack((label_images[i], peri_channels[i])) for i in range(images_count)]
 
           volumes[name] = np.array(input_images)
           masks[name] = np.array(label_images)
@@ -147,17 +142,18 @@ class PatientsDataset(Dataset):
         patient = self.patient_slice_index[idx][0]
         slice_n = self.patient_slice_index[idx][1]
 
-        if self.random_sampling:
-            patient = np.random.randint(len(self.volumes))
-            slice_n = np.random.choice(
-                range(self.volumes[patient][0].shape[0]), p=self.slice_weights[patient]
-            )
+        # if self.random_sampling:
+        #     patient = np.random.randint(len(self.volumes))
+        #     slice_n = np.random.choice(
+        #         range(self.volumes[patient][0].shape[0]), p=self.slice_weights[patient]
+        #     )
 
         v, m = self.volumes[patient]
         image = v[slice_n]
         mask = m[slice_n]
 
         image = image.squeeze(-1)
+        mask = mask.squeeze(-1)
 
         if self.transform is not None:
             image, mask = self.transform((image, mask))
@@ -165,6 +161,16 @@ class PatientsDataset(Dataset):
         # fix dimensions (C, H, W)
         image = image.transpose(2, 0, 1)
         mask = mask.transpose(2, 0, 1)
+
+        # plt.imshow(image[0])
+        # plt.show()
+        # plt.imshow(image[1], vmin=-0.5, vmax=0.5)
+        # plt.show()
+
+        # plt.imshow(mask[0])
+        # plt.show()
+        # plt.imshow(mask[1])
+        # plt.show()
 
         image_tensor = torch.from_numpy(image.astype(np.float32))
         mask_tensor = torch.from_numpy(mask.astype(np.float32))

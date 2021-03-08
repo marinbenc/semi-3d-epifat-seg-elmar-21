@@ -6,25 +6,19 @@ import numpy as np
 import torch
 import cv2 as cv
 from skimage.transform import resize
+from sklearn.model_selection import KFold
 
 import helpers as h
 from utils import dsc
 sys.path.append('models')
 from unet_plain import UNet
 from patients_dataset_eat import PatientsDataset
-from morphological_layer import process_image
-from interpolate_predictions import interpolate
-
-use_interp = True
-use_morph_layer = False
-peri_as_input = True
 
 dataset_folder = 'datasets/eat/'
-peri_folder = 'datasets/eat/peri_predicted_interpolated' if use_interp else 'datasets/eat/peri_predicted'
 gt_eat_folder = 'datasets/eat/label'
 
 folds = 20
-run = 'logs/eat/peri_as_input_on_gt_peri_relabeled/' if peri_as_input else 'logs/eat/peri_multiplied/'
+run = 'logs/2021-03-08-13:27:21_fold0/'
 models = h.listdir(run)
 models.sort()
 patients = h.listdir(gt_eat_folder)
@@ -32,26 +26,29 @@ patients.sort()
     
 all_dscs = []
 
-for fold in range(folds):
-    validation_patient = patients[fold]
+kfold = KFold(n_splits=folds)
+folds = kfold.split(patients)
+
+for fold, (train_idxs, valid_idxs) in enumerate(folds):
+    validation_patients = list(np.array(patients)[valid_idxs])
     dataset = PatientsDataset(
-        patient_names=[validation_patient],
+        patient_names=validation_patients[:1],
         inputs_dir=os.path.join(dataset_folder, 'input'),
         labels_dir=os.path.join(dataset_folder, 'label'),
-        peri_dir=peri_folder,
-        peri_as_input=peri_as_input,
-        peri_transform=process_image if use_morph_layer else None,
+        peri_dir=os.path.join(dataset_folder, 'peri'),
+        peri_as_input=False,
+        peri_transform=None,
         image_size=128,
         random_sampling=False,
         verbose=False)
 
-    fold_models_path = h.listdir(run + models[fold])
+    fold_models_path = h.listdir(run)
     fold_models_path.sort()
-    fold_model_path = run + models[fold] + '/' + fold_models_path[-2]
+    fold_model_path = run + '/' + fold_models_path[-2]
     print(f'validating model {fold_model_path}')
-    print(f'fold {str(fold)}, patient {validation_patient}')
+    print(f'fold {str(fold)}, patients {validation_patients}')
 
-    model = UNet(in_channels=3 if peri_as_input else 2, out_channels=1, device='cuda')
+    model = UNet(in_channels=2, out_channels=2, device='cuda')
     model.to('cuda')
     model.load_state_dict(torch.load(fold_model_path))
     model.eval()
@@ -62,11 +59,12 @@ for fold in range(folds):
 
     for (x, y) in dataset:
         all_xs.append(x.squeeze(0).detach().cpu().numpy())
-        all_ys.append(y.squeeze(0).detach().cpu().numpy())
+        all_ys.append(y.squeeze(0).detach().cpu().numpy()[:1])
 
         x = x.to('cuda')
         predicted_y = model(x.unsqueeze(0).detach())
-        all_predicted_ys.append(predicted_y.squeeze(0).squeeze(0).detach().cpu().numpy())
+        squeezed = predicted_y.squeeze(0).detach().cpu().numpy()[:1]
+        all_predicted_ys.append(squeezed)
 
     dscs = []
     for i in range(len(all_predicted_ys)):
@@ -77,6 +75,11 @@ for fold in range(folds):
         y = all_ys[i]
         y[y > 0.5] = 1
         y[y <= 0.5] = 0
+
+        # plt.imshow(y.squeeze(0))
+        # plt.show()
+        # plt.imshow(predicted_y.squeeze(0))
+        # plt.show()
         
         dscs.append(dsc(predicted_y, y))
 
@@ -89,5 +92,4 @@ for fold in range(folds):
     sorted_predicted_eats = np.array(all_predicted_ys)[dscs_sort]
 
 print('\n   --- VALIDATION DONE')
-print(f'peri as input: {peri_as_input}, morph: {use_morph_layer}, interp: {use_interp}')       
 print(f'    mean DSC: {np.mean(all_dscs):.4f}, std: {np.std(all_dscs):.4f}')
