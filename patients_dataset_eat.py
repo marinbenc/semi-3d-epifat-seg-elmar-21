@@ -32,16 +32,23 @@ class PatientsDataset(Dataset):
         inputs_dir,
         labels_dir,
         peri_dir,
+        peri_transform=None,
+        peri_as_input=True,
         transform=None,
         image_size=128,
         random_sampling=True,
         validation_cases=6,
         seed=42,
+        verbose=True
     ):
         # read images
         volumes = {}
         masks = {}
-        print("reading images...")
+
+        if verbose:
+            print("reading images...")
+
+        self.in_channels = 3 if peri_as_input else 2
 
         patient_names.sort()
 
@@ -57,7 +64,7 @@ class PatientsDataset(Dataset):
           label_files   = patient_files_in_folder(labels_dir, name)
 
           if not (len(input_files) == len(peri_files) == len(peri_files)):
-              print(name)
+            print(name)
           
           input_folder = os.path.join(inputs_dir, name)
           input_images = [imread(os.path.join(input_folder, filepath), as_gray=True) for filepath in input_files]
@@ -69,14 +76,20 @@ class PatientsDataset(Dataset):
           # add pericardium segmentation channel to input images
           peri_folder = os.path.join(peri_dir, name)
           peri_channels = [imread(os.path.join(peri_folder, filepath), as_gray=True) for filepath in peri_files]
+          if peri_transform is not None:
+            peri_channels = [peri_transform(img) for img in peri_channels]
           peri_channels = [resize(img, output_shape=(512, 512), order=0, mode="constant", cval=0, anti_aliasing=False) for img in peri_channels]
           
           # add depth and pericardium channels
-          #input_images = [input_images[i] * peri_channels[i] for i in range(images_count)]
-          
-          input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
-          input_images = [np.dstack((input_images[i], peri_channels[i], depth_channels[i])) for i in range(images_count)]
 
+          if peri_as_input:
+            input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
+            input_images = [np.dstack((input_images[i], peri_channels[i], depth_channels[i])) for i in range(images_count)]
+          else:
+            input_images = [input_images[i] * peri_channels[i] for i in range(images_count)]
+            input_images = [np.expand_dims(input_image, axis=-1) for input_image in input_images]
+            input_images = [np.dstack((input_images[i], depth_channels[i])) for i in range(images_count)]
+          
           label_folder = os.path.join(labels_dir, name)
           label_images = [imread(os.path.join(label_folder, filepath), as_gray=True) for filepath in label_files]
 
@@ -85,15 +98,20 @@ class PatientsDataset(Dataset):
 
         self.patients = sorted(volumes)
 
-        print("preprocessing volumes...")
+        if verbose: 
+            print("preprocessing volumes...")
+
         # create list of tuples (volume, mask)
         self.volumes = [(volumes[k], masks[k]) for k in self.patients]
 
-        print("resizing volumes...")
+        if verbose: 
+            print("resizing volumes...")
         # resize
         self.volumes = [resize_sample(v, size=image_size) for v in self.volumes]
 
-        print("normalizing volumes...")
+        if verbose: 
+            print("normalizing volumes...")
+
         # normalize channel-wise
         self.volumes = [(normalize_volume(v), m) for v, m in self.volumes]
 
@@ -106,7 +124,8 @@ class PatientsDataset(Dataset):
         # add channel dimension
         self.volumes = [(v[..., np.newaxis], m[..., np.newaxis]) for (v, m) in self.volumes]
 
-        print("done creating dataset")
+        if verbose: 
+            print("done creating dataset")
 
         # create global index for patient and slice (idx -> (p_idx, s_idx))
         num_slices = [v.shape[0] for v, m in self.volumes]

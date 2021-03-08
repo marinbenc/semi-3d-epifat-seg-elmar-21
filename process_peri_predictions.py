@@ -14,8 +14,9 @@ from skimage.transform import resize
 
 import helpers as h
 from patients_dataset import PatientsDataset
-sys.path.append('../models')
+sys.path.append('models')
 from unet_plain import UNet
+from utils import dsc
 
 # Original pericardium dataset used to train the pericardium model
 dataset_folder = 'datasets/dataset_pericardium_manual_polar/'
@@ -26,18 +27,12 @@ predicted_peri_folder = 'data/predicted_pericardium/'
 # How many CV folds were there
 folds = 20
 # Where to look for the saved model weights
-run = 'logs/cv-with-depth/'
+run = 'logs/peri/cv-with-depth-relabeled/'
 
 models = h.listdir(run)
 models.sort()
 patients = h.listdir(os.path.join(dataset_folder, 'input'))
 patients.sort()
-
-def dsc(y_pred, y_true):
-    if not np.any(y_true):
-        return 0.5
-    else:
-        return np.sum(y_pred[y_true == 1]) * 2.0 / (np.sum(y_pred) + np.sum(y_true))
     
 all_dscs = []
 
@@ -100,9 +95,6 @@ for fold in range(folds):
     
     dscs = []
     for i in range(len(all_predicted_eats)):
-        if np.sum(all_ys[i]) < 0.1:
-            dscs.append(0.5)
-            continue
         dscs.append(dsc(all_predicted_eats[i], all_eats[i]))
     mean_dsc = np.mean(dscs)
     all_dscs.append(mean_dsc)

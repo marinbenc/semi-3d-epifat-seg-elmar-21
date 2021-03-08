@@ -176,7 +176,7 @@ def datasets(args, patients_train, patients_valid):
         inputs_dir=os.path.join(args.images, 'input'),
         labels_dir=os.path.join(args.images, 'label'),
         image_size=args.image_size,
-        transform=transforms(scale=args.aug_scale, angle=args.aug_angle),
+        transform=None,
     )
     valid = Dataset(
         patient_names=patients_valid,

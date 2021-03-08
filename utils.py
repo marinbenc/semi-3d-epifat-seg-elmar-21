@@ -15,10 +15,9 @@ from skimage.transform import resize
 
 def dsc(y_pred, y_true):
     if not np.any(y_true):
-        return 0.5
+        return 1 - np.sum(y_pred) * 2.0 / np.sum(1 - y_true)
     else:
         return np.sum(y_pred[y_true == 1]) * 2.0 / (np.sum(y_pred) + np.sum(y_true))
-
 
 def crop_sample(x):
     volume, mask = x
