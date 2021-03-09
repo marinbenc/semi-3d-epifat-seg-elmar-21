@@ -175,5 +175,7 @@ class PatientsDataset(Dataset):
         image_tensor = torch.from_numpy(image.astype(np.float32))
         mask_tensor = torch.from_numpy(mask.astype(np.float32))
 
+        pixel_count = mask_tensor.sum()
+
         # return tensors
-        return image_tensor, mask_tensor
+        return image_tensor, (mask_tensor, pixel_count)

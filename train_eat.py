@@ -17,6 +17,7 @@ from pprint import pprint
 import numpy as np
 import torch
 import torch.optim as optim
+from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 from sklearn.model_selection import KFold
 import matplotlib.pyplot as plt
@@ -27,7 +28,8 @@ from ignite.contrib.handlers.tensorboard_logger import (
     global_step_from_engine,
 )
 from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
-from ignite.metrics import Accuracy, Loss, ConfusionMatrix, DiceCoefficient
+from ignite.metrics import Accuracy, Loss, ConfusionMatrix, DiceCoefficient, MeanSquaredError
+from ignite.contrib.metrics.regression import MedianAbsolutePercentageError
 
 import helpers as h
 from loss import DiceLoss
@@ -75,19 +77,36 @@ def train_fold(args, fold, device, train_patients, valid_patients):
     model.to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
     dsc_loss = DiceLoss()
+    mse_loss = MSELoss()
+
+    def criterion(outputs, labels):
+        image, regression = outputs
+        image_pred, regression_pred = labels
+        dsc = dsc_loss(image, image_pred)
+        mse = mse_loss(regression.squeeze(), regression_pred.squeeze())
+        return 0.001 * mse + dsc
+
+    def output_image_transform(data):
+        y_pred, y = data
+        return (y_pred[0], y[0])
+
+    def output_regression_transform(data):
+        y_pred, y = data
+        return (y_pred[1].squeeze(), y[1].squeeze())
 
     train_metrics = {
-        "loss": Loss(dsc_loss),
-        "dsc": DiceMetric(loader_train, device=device)
+        "dsc": DiceMetric(loader_train, device=device, output_transform=output_image_transform),
+        "mse": MedianAbsolutePercentageError(output_transform=output_regression_transform)
     }
 
     val_metrics = {
-        "loss": Loss(dsc_loss),
-        "dsc": DiceMetric(loader_valid, device=device)
+        "dsc": DiceMetric(loader_valid, device=device, output_transform=output_image_transform),
+        "mse": MedianAbsolutePercentageError(output_transform=output_regression_transform)
     }
 
-    trainer = create_supervised_trainer(model, optimizer, dsc_loss, device=device)
+    trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
     trainer.logger = setup_logger("Trainer")
 
     train_evaluator = create_supervised_evaluator(model, metrics=train_metrics, device=device)
@@ -114,7 +133,6 @@ def train_fold(args, fold, device, train_patients, valid_patients):
         if curr_dsc > best_dsc:
             best_dsc = curr_dsc
 
-
     log_dir = f'logs/{datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S")}_fold{fold}'
     tb_logger = TensorboardLogger(log_dir=log_dir)
 
@@ -131,7 +149,7 @@ def train_fold(args, fold, device, train_patients, valid_patients):
             evaluator,
             event_name=Events.EPOCH_COMPLETED,
             tag=tag,
-            metric_names=["loss", "dsc"],
+            metric_names=["mse", "dsc"],
             global_step_transform=global_step_from_engine(trainer),
         )
 

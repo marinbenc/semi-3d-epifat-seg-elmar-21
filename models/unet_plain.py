@@ -23,6 +23,18 @@ class UNet(nn.Module):
 
         self.bottleneck = UNet._block(features * 8, features * 16, name="bottleneck")
 
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+        self.regressor = nn.Sequential(
+            nn.Linear(features * 16, features * 16),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(features * 16, features * 16),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(features * 16, 1)
+        )
+
         self.upconv4 = nn.ConvTranspose2d(
             features * 16, features * 8, kernel_size=2, stride=2
         )
@@ -53,6 +65,7 @@ class UNet(nn.Module):
 
         bottleneck = self.bottleneck(self.pool4(enc4))
 
+        # segmentation branch
         dec4 = self.upconv4(bottleneck)
         dec4 = torch.cat((dec4, enc4), dim=1)
         dec4 = self.decoder4(dec4)
@@ -65,7 +78,13 @@ class UNet(nn.Module):
         dec1 = self.upconv1(dec2)
         dec1 = torch.cat((dec1, enc1,), dim=1)
         dec1 = self.decoder1(dec1)
-        return torch.sigmoid(self.conv(dec1))
+
+        # regression branch
+        pool = self.avg_pool(bottleneck)
+        pool = torch.flatten(pool, 1)
+        regression = self.regressor(pool)
+
+        return torch.sigmoid(self.conv(dec1)), regression
 
     def depth_feature(self, dec, x):
       return torch.ones((x.shape[0], 1, dec.shape[2], dec.shape[3]), device=self.device) * x[:, 1:, :1, :1]
