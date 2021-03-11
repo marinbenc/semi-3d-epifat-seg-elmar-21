@@ -82,15 +82,12 @@ def train_fold(args, fold, device, train_patients, valid_patients):
     mse_loss = MSELoss()
 
     def criterion(outputs, labels):
-        image, regression = outputs
-        image_pred, regression_pred = labels
-        dsc = dsc_loss(image, image_pred)
-        mse = mse_loss(regression.squeeze(), regression_pred.squeeze())
-        return 0.001 * mse + dsc
+        dsc = dsc_loss(outputs, labels)
+        #mse = mse_loss(regression.squeeze(), regression_pred.squeeze())
+        return dsc
 
     def output_image_transform(data):
-        y_pred, y = data
-        return (y_pred[0], y[0])
+        return data
 
     def output_regression_transform(data):
         y_pred, y = data
@@ -98,12 +95,12 @@ def train_fold(args, fold, device, train_patients, valid_patients):
 
     train_metrics = {
         "dsc": DiceMetric(loader_train, device=device, output_transform=output_image_transform),
-        "mse": MedianAbsolutePercentageError(output_transform=output_regression_transform)
+        #"mse": MedianAbsolutePercentageError(output_transform=output_regression_transform)
     }
 
     val_metrics = {
         "dsc": DiceMetric(loader_valid, device=device, output_transform=output_image_transform),
-        "mse": MedianAbsolutePercentageError(output_transform=output_regression_transform)
+        #"mse": MedianAbsolutePercentageError(output_transform=output_regression_transform)
     }
 
     trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
@@ -149,7 +146,7 @@ def train_fold(args, fold, device, train_patients, valid_patients):
             evaluator,
             event_name=Events.EPOCH_COMPLETED,
             tag=tag,
-            metric_names=["mse", "dsc"],
+            metric_names=["dsc"],
             global_step_transform=global_step_from_engine(trainer),
         )
 

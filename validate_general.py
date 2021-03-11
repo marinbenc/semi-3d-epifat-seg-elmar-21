@@ -18,13 +18,13 @@ from patients_dataset_eat import PatientsDataset
 dataset_folder = 'datasets/eat/'
 gt_eat_folder = 'datasets/eat/label'
 
-folds = 2
-run = 'logs/2021-03-09-10:02:42_fold0/'
+folds = 20
+run = 'logs/joint_training/2021-03-08-11:04:14_fold0/'
 models = h.listdir(run)
 models.sort()
 patients = h.listdir(gt_eat_folder)
 patients.sort()
-    
+
 all_dscs = []
 all_rs = []
 
@@ -55,8 +55,8 @@ for fold, (train_idxs, valid_idxs) in enumerate(folds):
     model.load_state_dict(torch.load(fold_model_path))
     model.eval()
 
-    all_pixel_counts = []
-    all_predicted_pixel_counts = []
+    # all_pixel_counts = []
+    # all_predicted_pixel_counts = []
 
     all_xs = []
     all_ys = []
@@ -64,15 +64,15 @@ for fold, (train_idxs, valid_idxs) in enumerate(folds):
 
     for (x, y) in dataset:
         all_xs.append(x.squeeze(0).detach().cpu().numpy())
-        all_ys.append(y[0].squeeze(0).detach().cpu().numpy()[:1])
+        all_ys.append(y.squeeze(0).detach().cpu().numpy()[:1])
 
         x = x.to('cuda')
         predicted_y = model(x.unsqueeze(0).detach())
-        squeezed = predicted_y[0].squeeze(0).detach().cpu().numpy()[:1]
+        squeezed = predicted_y.squeeze(0).detach().cpu().numpy()[:1]
         all_predicted_ys.append(squeezed)
 
-        all_pixel_counts.append(y[1].squeeze().item())
-        all_predicted_pixel_counts.append(predicted_y[1].squeeze().item())
+        # all_pixel_counts.append(y[1].squeeze().item())
+        # all_predicted_pixel_counts.append(predicted_y[1].squeeze().item())
 
     dscs = []
     for i in range(len(all_predicted_ys)):
@@ -95,11 +95,11 @@ for fold, (train_idxs, valid_idxs) in enumerate(folds):
     print(f'DSC fold {fold}: {mean_dsc:.4f}')
     all_dscs.append(mean_dsc)
 
-    all_pixel_counts, all_predicted_pixel_counts = zip(*sorted(zip(all_pixel_counts, all_predicted_pixel_counts)))
+    #all_pixel_counts, all_predicted_pixel_counts = zip(*sorted(zip(all_pixel_counts, all_predicted_pixel_counts)))
 
-    r, p = pearsonr(all_pixel_counts, all_predicted_pixel_counts)
-    print(f'Pearson r fold {fold}: {r:.4f}, p = {p}')
-    all_rs.append(r)
+    #r, p = pearsonr(all_pixel_counts, all_predicted_pixel_counts)
+    #print(f'Pearson r fold {fold}: {r:.4f}, p = {p}')
+    #all_rs.append(r)
 
     dscs_sort = np.array(dscs).argsort()
     sorted_eats = np.array(all_ys)[dscs_sort]
@@ -107,4 +107,4 @@ for fold, (train_idxs, valid_idxs) in enumerate(folds):
 
 print('\n   --- VALIDATION DONE')
 print(f'    mean DSC: {np.mean(all_dscs):.4f}, std: {np.std(all_dscs):.4f}')
-print(f'    mean   r: {np.mean(all_rs):.4f}, std: {np.std(all_rs):.4f}')
+#print(f'    mean   r: {np.mean(all_rs):.4f}, std: {np.std(all_rs):.4f}')
