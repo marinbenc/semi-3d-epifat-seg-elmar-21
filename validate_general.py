@@ -59,7 +59,7 @@ def get_predictions(model, patients):
     return all_xs, all_ys, all_predicted_ys
 
 def train_regression(segmentation_model, train_patients):
-    all_xs, all_ys, all_predicted_ys = get_predictions(segmentation_model, train_patients)
+    _, all_ys, all_predicted_ys = get_predictions(segmentation_model, train_patients)
 
     predicted_pixels = [np.sum(predicted_y) for predicted_y in all_predicted_ys]
     gt_pixels = [np.sum(y) for y in all_ys]
@@ -70,16 +70,16 @@ def train_regression(segmentation_model, train_patients):
     regressor = RandomForestRegressor(n_estimators=10)
     regressor.fit(predicted_pixels, gt_pixels)
 
-    #plt.scatter(predicted_pixels, gt_pixels,  color='black')
-    #plt.show()
+    # plt.scatter(predicted_pixels, gt_pixels,  color='black')
+    # plt.show()
 
     return regressor
 
 dataset_folder = 'datasets/eat/'
 gt_eat_folder = 'datasets/eat/label'
 
-folds = 4
-regression_training_patient_count = 3
+folds = 2
+regression_training_patient_count = 5
 
 run = 'logs/2021-03-11-13:54:19_fold0/'
 models = h.listdir(run)
