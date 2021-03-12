@@ -10,6 +10,8 @@ from skimage.transform import resize
 from sklearn.model_selection import KFold
 from scipy.stats import pearsonr
 from sklearn.linear_model import LinearRegression
+from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor
 
 import helpers as h
 from utils import dsc
@@ -31,8 +33,8 @@ def estimate_model_parameters(model, train_patients):
         squeezed = predicted_y.squeeze(0).detach().cpu().numpy()[:1]
         all_predicted_ys.append(squeezed)
 
-    tprs = []
-    fprs = []
+    predicted_pixels = []
+    gt_pixels = []
 
     for i in range(len(all_predicted_ys)):
         predicted_y = all_predicted_ys[i]
@@ -44,24 +46,18 @@ def estimate_model_parameters(model, train_patients):
         y[y > 0.5] = 1
         y[y <= 0.5] = 0
 
-        true_positives    = np.sum(np.logical_and(y == 1, predicted_y == 1))
-        false_positives   = np.sum(np.logical_and(y == 1, predicted_y == 0))
-        true_negatives    = np.sum(np.logical_and(y == 0, predicted_y == 0))
-        false_negatives   = np.sum(np.logical_and(y == 0, predicted_y == 1))
+        predicted_pixels.append(np.sum(predicted_y))
+        gt_pixels.append(np.sum(y))
 
-        if true_positives == 0:
-            tpr = 1
-        else:
-            tpr = true_positives / float(true_positives + false_negatives)
-        tprs.append(tpr)
+    predicted_pixels = np.array(predicted_pixels).reshape(-1, 1)
+    gt_pixels = np.array(gt_pixels)
 
-        if false_positives == 0:
-            fpr = 0
-        else:
-            fpr = false_positives / float(false_positives + true_negatives)
-        fprs.append(fpr)
+    regressor = RandomForestRegressor(n_estimators=10)
+    regressor.fit(predicted_pixels, gt_pixels)
 
-    return np.mean(tprs), np.mean(fprs)
+    #plt.scatter(predicted_pixels, gt_pixels,  color='black')
+    #plt.show()
+    return regressor
 
 dataset_folder = 'datasets/eat/'
 gt_eat_folder = 'datasets/eat/label'
@@ -112,7 +108,7 @@ for fold, (train_idxs, valid_idxs) in enumerate(folds):
     model.load_state_dict(torch.load(fold_model_path))
     model.eval()
 
-    tpr, fpr = estimate_model_parameters(model, list(np.array(patients)[valid_idxs[len(valid_idxs)//2:]]))
+    regressor = estimate_model_parameters(model, list(np.array(patients)[valid_idxs[len(valid_idxs)//2:]]))
 
     all_pixel_counts = []
     all_predicted_pixel_counts = []
@@ -150,11 +146,13 @@ for fold, (train_idxs, valid_idxs) in enumerate(folds):
 
         positives = predicted_y.sum()
         total = predicted_y.shape[-1] * predicted_y.shape[-2]
-        adjusted = (positives - fpr * total) / (tpr - fpr)
 
+        adjusted = regressor.predict(np.array([positives]).reshape(-1, 1))[0]
+        adjusted = 0 if adjusted < 0 else adjusted
+
+        all_adjusted_pixel_counts.append(adjusted)
         all_pixel_counts.append(y.sum())
         all_predicted_pixel_counts.append(positives)
-        all_adjusted_pixel_counts.append(adjusted)
 
         # plt.imshow(y.squeeze(0))
         # plt.show()
