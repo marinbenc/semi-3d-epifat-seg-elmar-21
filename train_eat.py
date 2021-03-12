@@ -14,6 +14,7 @@ import sys
 import datetime
 from pprint import pprint
 
+import segmentation_models_pytorch as smp
 import numpy as np
 import torch
 import torch.optim as optim
@@ -73,7 +74,15 @@ def train_fold(args, fold, device, train_patients, valid_patients):
 
     loader_train, loader_valid = data_loaders(args, train_patients, valid_patients)
 
-    model = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels, device=device)
+    model = smp.UnetPlusPlus(
+        encoder_name="resnet34",        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
+        encoder_weights="imagenet",     # use `imagenet` pre-trained weights for encoder initialization
+        in_channels=2,                  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+        classes=2,                      # model output channels (number of classes in your dataset)
+        activation="sigmoid"
+    )
+
+    #model = UNet(in_channels=Dataset.in_channels, out_channels=Dataset.out_channels, device=device)
     model.to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
@@ -86,21 +95,28 @@ def train_fold(args, fold, device, train_patients, valid_patients):
         #mse = mse_loss(regression.squeeze(), regression_pred.squeeze())
         return dsc
 
-    def output_image_transform(data):
-        return data
+    def output_eat_transform(data):
+        image, labels = data
+        return image[:, :1, :, :], labels[:, :1, :, :]
+
+    def output_peri_transform(data):
+        image, labels = data
+        return image[:, 1:, :, :], labels[:, 1:, :, :]
+
 
     def output_regression_transform(data):
         y_pred, y = data
         return (y_pred[1].squeeze(), y[1].squeeze())
 
     train_metrics = {
-        "dsc": DiceMetric(loader_train, device=device, output_transform=output_image_transform),
+        "dsc_eat": DiceMetric(loader_train, device=device, output_transform=output_eat_transform),
+        "dsc_peri": DiceMetric(loader_train, device=device, output_transform=output_peri_transform),
         #"mse": MedianAbsolutePercentageError(output_transform=output_regression_transform)
     }
 
     val_metrics = {
-        "dsc": DiceMetric(loader_valid, device=device, output_transform=output_image_transform),
-        #"mse": MedianAbsolutePercentageError(output_transform=output_regression_transform)
+        "dsc_eat": DiceMetric(loader_valid, device=device, output_transform=output_eat_transform),
+        "dsc_peri": DiceMetric(loader_valid, device=device, output_transform=output_peri_transform),
     }
 
     trainer = create_supervised_trainer(model, optimizer, criterion, device=device)
@@ -126,7 +142,7 @@ def train_fold(args, fold, device, train_patients, valid_patients):
         nonlocal best_dsc
         train_evaluator.run(loader_train)
         validation_evaluator.run(loader_valid)
-        curr_dsc = validation_evaluator.state.metrics['dsc']
+        curr_dsc = validation_evaluator.state.metrics['dsc_eat']
         if curr_dsc > best_dsc:
             best_dsc = curr_dsc
 
@@ -146,19 +162,19 @@ def train_fold(args, fold, device, train_patients, valid_patients):
             evaluator,
             event_name=Events.EPOCH_COMPLETED,
             tag=tag,
-            metric_names=["dsc"],
+            metric_names="all",
             global_step_transform=global_step_from_engine(trainer),
         )
 
     def score_function(engine):
-        return engine.state.metrics["dsc"]
+        return engine.state.metrics["dsc_eat"]
 
     model_checkpoint = ModelCheckpoint(
         log_dir,
         n_saved=2,
         filename_prefix="best",
         score_function=score_function,
-        score_name="dsc",
+        score_name="dsc_eat",
         global_step_transform=global_step_from_engine(trainer),
         require_empty=False
     )
