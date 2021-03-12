@@ -19,35 +19,50 @@ sys.path.append('models')
 from unet_plain import UNet
 from patients_dataset_eat import PatientsDataset
 
-def estimate_model_parameters(model, train_patients):
+def get_dataset(patients):
+    dataset = PatientsDataset(
+        patient_names=patients,
+        inputs_dir=os.path.join(dataset_folder, 'input'),
+        labels_dir=os.path.join(dataset_folder, 'label'),
+        peri_dir=os.path.join(dataset_folder, 'peri'),
+        peri_as_input=False,
+        peri_transform=None,
+        image_size=128,
+        random_sampling=False,
+        verbose=False)
+    return dataset
+
+def get_predictions(model, patients):
     all_xs = []
     all_ys = []
     all_predicted_ys = []
 
+    dataset = get_dataset(patients)
+
     for (x, y) in dataset:
-        all_xs.append(x.squeeze(0).detach().cpu().numpy())
-        all_ys.append(y.squeeze(0).detach().cpu().numpy()[:1])
-
         x = x.to('cuda')
+
         predicted_y = model(x.unsqueeze(0).detach())
-        squeezed = predicted_y.squeeze(0).detach().cpu().numpy()[:1]
-        all_predicted_ys.append(squeezed)
-
-    predicted_pixels = []
-    gt_pixels = []
-
-    for i in range(len(all_predicted_ys)):
-        predicted_y = all_predicted_ys[i]
-
+        predicted_y = predicted_y.squeeze(0).detach().cpu().numpy()[:1]
         predicted_y[predicted_y > 0.5] = 1
         predicted_y[predicted_y <= 0.5] = 0
+        all_predicted_ys.append(predicted_y)
 
-        y = all_ys[i]
+        x = x.squeeze(0).detach().cpu().numpy()
+        all_xs.append(x)
+
+        y = y.squeeze(0).detach().cpu().numpy()[:1]
         y[y > 0.5] = 1
         y[y <= 0.5] = 0
+        all_ys.append(y)
+    
+    return all_xs, all_ys, all_predicted_ys
 
-        predicted_pixels.append(np.sum(predicted_y))
-        gt_pixels.append(np.sum(y))
+def train_regression(segmentation_model, train_patients):
+    all_xs, all_ys, all_predicted_ys = get_predictions(segmentation_model, train_patients)
+
+    predicted_pixels = [np.sum(predicted_y) for predicted_y in all_predicted_ys]
+    gt_pixels = [np.sum(y) for y in all_ys]
 
     predicted_pixels = np.array(predicted_pixels).reshape(-1, 1)
     gt_pixels = np.array(gt_pixels)
@@ -57,12 +72,15 @@ def estimate_model_parameters(model, train_patients):
 
     #plt.scatter(predicted_pixels, gt_pixels,  color='black')
     #plt.show()
+
     return regressor
 
 dataset_folder = 'datasets/eat/'
 gt_eat_folder = 'datasets/eat/label'
 
-folds = 2
+folds = 4
+regression_training_patient_count = 3
+
 run = 'logs/2021-03-11-13:54:19_fold0/'
 models = h.listdir(run)
 models.sort()
@@ -79,23 +97,18 @@ folds = kfold.split(patients)
 for fold, (train_idxs, valid_idxs) in enumerate(folds):
     if fold > 0:
         break
-    validation_patients = list(np.array(patients)[valid_idxs[:len(valid_idxs)//2]])
-    dataset = PatientsDataset(
-        patient_names=validation_patients,
-        inputs_dir=os.path.join(dataset_folder, 'input'),
-        labels_dir=os.path.join(dataset_folder, 'label'),
-        peri_dir=os.path.join(dataset_folder, 'peri'),
-        peri_as_input=False,
-        peri_transform=None,
-        image_size=128,
-        random_sampling=False,
-        verbose=False)
+    regression_idxs = valid_idxs[:regression_training_patient_count]
+    valid_idxs = valid_idxs[regression_training_patient_count:]
+
+    validation_patients = list(np.array(patients)[valid_idxs])
+    regression_patients = list(np.array(patients)[regression_idxs])
 
     fold_models_path = h.listdir(run)
     fold_models_path.sort()
     fold_model_path = run + '/' + fold_models_path[-2]
-    print(f'validating model {fold_model_path}')
-    print(f'fold {str(fold)}, patients {validation_patients}')
+
+    print(f'model: {fold_model_path}')
+    print(f'fold {str(fold)}, validation patients: {validation_patients}')
 
     model = smp.Unet(
         encoder_name="resnet34",        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
@@ -104,48 +117,28 @@ for fold, (train_idxs, valid_idxs) in enumerate(folds):
         classes=2,                      # model output channels (number of classes in your dataset),
         activation="sigmoid"
     )
+
     model.to('cuda')
     model.load_state_dict(torch.load(fold_model_path))
     model.eval()
 
-    regressor = estimate_model_parameters(model, list(np.array(patients)[valid_idxs[len(valid_idxs)//2:]]))
+    print(f'Training regression on patients {regression_patients}...')
+    regressor = train_regression(model, regression_patients)
 
+    print('Validating...')
+
+    all_xs, all_ys, all_predicted_ys = get_predictions(model, validation_patients)
+
+    dscs = []
     all_pixel_counts = []
     all_predicted_pixel_counts = []
     all_adjusted_pixel_counts = []
 
-    all_xs = []
-    all_ys = []
-    all_predicted_ys = []
-
-    for (x, y) in dataset:
-        all_xs.append(x.squeeze(0).detach().cpu().numpy())
-        all_ys.append(y.squeeze(0).detach().cpu().numpy()[:1])
-
-        x = x.to('cuda')
-        predicted_y = model(x.unsqueeze(0).detach())
-        squeezed = predicted_y.squeeze(0).detach().cpu().numpy()[:1]
-        all_predicted_ys.append(squeezed)
-
-    dscs = []
-
     for i in range(len(all_predicted_ys)):
         predicted_y = all_predicted_ys[i]
-
-        # plt.imshow(all_ys[i].squeeze())
-        # plt.show()
-        # plt.imshow(predicted_y.squeeze())
-        # plt.show()
-
-        predicted_y[predicted_y > 0.5] = 1
-        predicted_y[predicted_y <= 0.5] = 0
-
         y = all_ys[i]
-        y[y > 0.5] = 1
-        y[y <= 0.5] = 0
 
         positives = predicted_y.sum()
-        total = predicted_y.shape[-1] * predicted_y.shape[-2]
 
         adjusted = regressor.predict(np.array([positives]).reshape(-1, 1))[0]
         adjusted = 0 if adjusted < 0 else adjusted
@@ -153,19 +146,21 @@ for fold, (train_idxs, valid_idxs) in enumerate(folds):
         all_adjusted_pixel_counts.append(adjusted)
         all_pixel_counts.append(y.sum())
         all_predicted_pixel_counts.append(positives)
+        dscs.append(dsc(predicted_y, y))
 
         # plt.imshow(y.squeeze(0))
         # plt.show()
         # plt.imshow(predicted_y.squeeze(0))
         # plt.show()
         
-        dscs.append(dsc(predicted_y, y))
-
     mean_dsc = np.mean(dscs)
     print(f'DSC fold {fold}: {mean_dsc:.4f}')
     all_dscs.append(mean_dsc)
 
-    all_pixel_counts, all_predicted_pixel_counts, all_adjusted_pixel_counts = zip(*sorted(zip(all_pixel_counts, all_predicted_pixel_counts, all_adjusted_pixel_counts)))
+    all_pixel_counts, all_predicted_pixel_counts, all_adjusted_pixel_counts = zip(*sorted(zip(
+        all_pixel_counts, 
+        all_predicted_pixel_counts, 
+        all_adjusted_pixel_counts)))
 
     r, p = pearsonr(all_pixel_counts, all_predicted_pixel_counts)
     print(f'Pearson r fold {fold}: {r:.4f}, p = {p}')
